@@ -150,11 +150,11 @@ class NetworkTrainer:
             args.seed = random.randint(0, 2**32)
         set_seed(args.seed)
 
-        # tokenizerは単体またはリスト、tokenizersは必ずリスト：既存のコードとの互換性のため
+        # tokenizer是单个对象或者列表，tokenizers必须是列表：为了与现有代码的兼容性
         tokenizer = self.load_tokenizer(args)
         tokenizers = tokenizer if isinstance(tokenizer, list) else [tokenizer]
 
-        # データセットを準備する
+        # 准备数据集
         if args.dataset_class is None:
             blueprint_generator = BlueprintGenerator(ConfigSanitizer(True, True, args.masked_loss, True))
             if use_user_config:
@@ -163,7 +163,7 @@ class NetworkTrainer:
                 ignored = ["train_data_dir", "reg_data_dir", "in_json"]
                 if any(getattr(args, attr) is not None for attr in ignored):
                     logger.warning(
-                        "ignoring the following options because config file is found: {0} / 設定ファイルが利用されるため以下のオプションは無視されます: {0}".format(
+                        "ignoring the following options because config file is found: {0}".format(
                             ", ".join(ignored)
                         )
                     )
@@ -196,6 +196,7 @@ class NetworkTrainer:
 
             blueprint = blueprint_generator.generate(user_config, args, tokenizer=tokenizer)
             train_dataset_group = config_util.generate_dataset_group_by_blueprint(blueprint.dataset_group)
+            # TODO: 查看加载的数据集格式，文本和图像是否配对
         else:
             # use arbitrary dataset class
             train_dataset_group = train_util.load_arbitrary_dataset(args, tokenizer)
@@ -210,44 +211,44 @@ class NetworkTrainer:
             return
         if len(train_dataset_group) == 0:
             logger.error(
-                "No data found. Please verify arguments (train_data_dir must be the parent of folders with images) / 画像がありません。引数指定を確認してください（train_data_dirには画像があるフォルダではなく、画像があるフォルダの親フォルダを指定する必要があります）"
+                "No data found. Please verify arguments (train_data_dir must be the parent of folders with images) "
             )
             return
 
         if cache_latents:
             assert (
                 train_dataset_group.is_latent_cacheable()
-            ), "when caching latents, either color_aug or random_crop cannot be used / latentをキャッシュするときはcolor_augとrandom_cropは使えません"
+            ), "when caching latents, either color_aug or random_crop cannot be used"
 
         self.assert_extra_args(args, train_dataset_group)
 
-        # acceleratorを準備する
+        # accelerator
         logger.info("preparing accelerator")
         accelerator = train_util.prepare_accelerator(args)
         is_main_process = accelerator.is_main_process
 
-        # mixed precisionに対応した型を用意しておき適宜castする
+        # mixed precision
         weight_dtype, save_dtype = train_util.prepare_dtype(args)
         vae_dtype = torch.float32 if args.no_half_vae else weight_dtype
 
-        # モデルを読み込む
+        # load model
         model_version, text_encoder, vae, unet = self.load_target_model(args, weight_dtype, accelerator)
 
         # text_encoder is List[CLIPTextModel] or CLIPTextModel
         text_encoders = text_encoder if isinstance(text_encoder, list) else [text_encoder]
 
-        # モデルに xformers とか memory efficient attention を組み込む
+        # 将 xformers 或内存高效注意力机制集成到模型中
         train_util.replace_unet_modules(unet, args.mem_eff_attn, args.xformers, args.sdpa)
-        if torch.__version__ >= "2.0.0":  # PyTorch 2.0.0 以上対応のxformersなら以下が使える
+        if torch.__version__ >= "2.0.0":  # 如果使用的是支持 PyTorch 2.0.0 及以上版本的 xformers，则可以使用以下代码
             vae.set_use_memory_efficient_attention_xformers(args.xformers)
 
-        # 差分追加学習のためにモデルを読み込む
+        # 差分追加学习
         sys.path.append(os.path.dirname(__file__))
         accelerator.print("import network module:", args.network_module)
         network_module = importlib.import_module(args.network_module)
 
         if args.base_weights is not None:
-            # base_weights が指定されている場合は、指定された重みを読み込みマージする
+            # 如果指定了 base_weights，则加载并合并指定的权重
             for i, weight_path in enumerate(args.base_weights):
                 if args.base_weights_multiplier is None or len(args.base_weights_multiplier) <= i:
                     multiplier = 1.0
@@ -263,7 +264,7 @@ class NetworkTrainer:
 
             accelerator.print(f"all weights merged: {', '.join(args.base_weights)}")
 
-        # 学習を準備する
+        # 准备训练
         if cache_latents:
             vae.to(accelerator.device, dtype=vae_dtype)
             vae.requires_grad_(False)
@@ -275,7 +276,6 @@ class NetworkTrainer:
 
             accelerator.wait_for_everyone()
 
-        # 必要ならテキストエンコーダーの出力をキャッシュする: Text Encoderはcpuまたはgpuへ移される
         # cache text encoder outputs if needed: Text Encoder is moved to cpu or gpu
         self.cache_text_encoder_outputs_if_needed(
             args, accelerator, unet, vae, tokenizers, text_encoders, train_dataset_group, weight_dtype
@@ -314,7 +314,7 @@ class NetworkTrainer:
             network.prepare_network(args)
         if args.scale_weight_norms and not hasattr(network, "apply_max_norm_regularization"):
             logger.warning(
-                "warning: scale_weight_norms is specified but the network does not support it / scale_weight_normsが指定されていますが、ネットワークが対応していません"
+                "warning: scale_weight_norms is specified but the network does not support it"
             )
             args.scale_weight_norms = False
 
@@ -334,10 +334,8 @@ class NetworkTrainer:
             del t_enc
             network.enable_gradient_checkpointing()  # may have no effect
 
-        # 学習に必要なクラスを準備する
         accelerator.print("prepare optimizer, data loader etc.")
 
-        # 後方互換性を確保するよ
         try:
             results = network.prepare_optimizer_params(args.text_encoder_lr, args.unet_lr, args.learning_rate)
             if type(results) is tuple:
@@ -366,8 +364,8 @@ class NetworkTrainer:
 
         optimizer_name, optimizer_args, optimizer = train_util.get_optimizer(args, trainable_params)
 
-        # dataloaderを準備する
-        # DataLoaderのプロセス数：0 は persistent_workers が使えないので注意
+        # dataloader
+        # 注意：当 DataLoader 的进程数为 0 时，无法使用 persistent_workers
         n_workers = min(args.max_data_loader_n_workers, os.cpu_count())  # cpu_count or max_data_loader_n_workers
 
         train_dataloader = torch.utils.data.DataLoader(
@@ -379,42 +377,41 @@ class NetworkTrainer:
             persistent_workers=args.persistent_data_loader_workers,
         )
 
-        # 学習ステップ数を計算する
+        # 计算训练步数
         if args.max_train_epochs is not None:
             args.max_train_steps = args.max_train_epochs * math.ceil(
                 len(train_dataloader) / accelerator.num_processes / args.gradient_accumulation_steps
             )
             accelerator.print(
-                f"override steps. steps for {args.max_train_epochs} epochs is / 指定エポックまでのステップ数: {args.max_train_steps}"
+                f"override steps. steps for {args.max_train_epochs} epochs is: {args.max_train_steps}"
             )
 
-        # データセット側にも学習ステップを送信
         train_dataset_group.set_max_train_steps(args.max_train_steps)
 
-        # lr schedulerを用意する
+        # lr scheduler
         lr_scheduler = train_util.get_scheduler_fix(args, optimizer, accelerator.num_processes)
 
-        # 実験的機能：勾配も含めたfp16/bf16学習を行う　モデル全体をfp16/bf16にする
+        # 实验性功能：在 fp16/bf16 训练中包含梯度，将整个模型转换为 fp16/bf16
         if args.full_fp16:
             assert (
                 args.mixed_precision == "fp16"
-            ), "full_fp16 requires mixed precision='fp16' / full_fp16を使う場合はmixed_precision='fp16'を指定してください。"
+            ), "full_fp16 requires mixed precision='fp16'"
             accelerator.print("enable full fp16 training.")
             network.to(weight_dtype)
         elif args.full_bf16:
             assert (
                 args.mixed_precision == "bf16"
-            ), "full_bf16 requires mixed precision='bf16' / full_bf16を使う場合はmixed_precision='bf16'を指定してください。"
+            ), "full_bf16 requires mixed precision='bf16'"
             accelerator.print("enable full bf16 training.")
             network.to(weight_dtype)
 
         unet_weight_dtype = te_weight_dtype = weight_dtype
         # Experimental Feature: Put base model into fp8 to save vram
         if args.fp8_base:
-            assert torch.__version__ >= "2.1.0", "fp8_base requires torch>=2.1.0 / fp8を使う場合はtorch>=2.1.0が必要です。"
+            assert torch.__version__ >= "2.1.0", "fp8_base requires torch>=2.1.0"
             assert (
                 args.mixed_precision != "no"
-            ), "fp8_base requires mixed precision='fp16' or 'bf16' / fp8を使う場合はmixed_precision='fp16'または'bf16'が必要です。"
+            ), "fp8_base requires mixed precision='fp16' or 'bf16'"
             accelerator.print("enable fp8 training.")
             unet_weight_dtype = torch.float8_e4m3fn
             te_weight_dtype = torch.float8_e4m3fn
@@ -430,7 +427,7 @@ class NetworkTrainer:
                 # nn.Embedding not support FP8
                 t_enc.text_model.embeddings.to(dtype=(weight_dtype if te_weight_dtype != weight_dtype else te_weight_dtype))
 
-        # acceleratorがなんかよろしくやってくれるらしい / accelerator will do something good
+        # accelerator will do something good
         if args.deepspeed:
             ds_model = deepspeed_utils.prepare_deepspeed_model(
                 args,
@@ -548,17 +545,17 @@ class NetworkTrainer:
         # TODO: find a way to handle total batch size when there are multiple datasets
         total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
-        accelerator.print("running training / 学習開始")
-        accelerator.print(f"  num train images * repeats / 学習画像の数×繰り返し回数: {train_dataset_group.num_train_images}")
-        accelerator.print(f"  num reg images / 正則化画像の数: {train_dataset_group.num_reg_images}")
-        accelerator.print(f"  num batches per epoch / 1epochのバッチ数: {len(train_dataloader)}")
-        accelerator.print(f"  num epochs / epoch数: {num_train_epochs}")
+        accelerator.print("running training")
+        accelerator.print(f"  num train images * repeats: {train_dataset_group.num_train_images}")
+        accelerator.print(f"  num reg images: {train_dataset_group.num_reg_images}")
+        accelerator.print(f"  num batches per epoch: {len(train_dataloader)}")
+        accelerator.print(f"  num epochs: {num_train_epochs}")
         accelerator.print(
-            f"  batch size per device / バッチサイズ: {', '.join([str(d.batch_size) for d in train_dataset_group.datasets])}"
+            f"  batch size per device: {', '.join([str(d.batch_size) for d in train_dataset_group.datasets])}"
         )
         # accelerator.print(f"  total train batch size (with parallel & distributed & accumulation) / 総バッチサイズ（並列学習、勾配合計含む）: {total_batch_size}")
-        accelerator.print(f"  gradient accumulation steps / 勾配を合計するステップ数 = {args.gradient_accumulation_steps}")
-        accelerator.print(f"  total optimization steps / 学習ステップ数: {args.max_train_steps}")
+        accelerator.print(f"  gradient accumulation steps: {args.gradient_accumulation_steps}")
+        accelerator.print(f"  total optimization steps: {args.max_train_steps}")
 
         # TODO refactor metadata creation and move to util
         metadata = {
@@ -781,7 +778,7 @@ class NetworkTrainer:
             # if initial_epoch or initial_step is specified, steps_from_state is ignored even when resuming
             if steps_from_state is not None:
                 logger.warning(
-                    "steps from the state is ignored because initial_step is specified / initial_stepが指定されているため、stateからのステップ数は無視されます"
+                    "steps from the state is ignored because initial_step is specified"
                 )
             if args.initial_step is not None:
                 initial_step = args.initial_step
@@ -811,9 +808,9 @@ class NetworkTrainer:
                 # if skip_until_initial_step is specified, load data and discard it to ensure the same data is used
                 if not args.resume:
                     logger.info(
-                        f"initial_step is specified but not resuming. lr scheduler will be started from the beginning / initial_stepが指定されていますがresumeしていないため、lr schedulerは最初から始まります"
+                        f"initial_step is specified but not resuming. lr scheduler will be started from the beginning"
                     )
-                logger.info(f"skipping {initial_step} steps / {initial_step}ステップをスキップします")
+                logger.info(f"skipping {initial_step} steps")
                 initial_step *= args.gradient_accumulation_steps
 
                 # set epoch to start to make initial_step less than len(train_dataloader)

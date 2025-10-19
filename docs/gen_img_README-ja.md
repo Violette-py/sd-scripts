@@ -1,165 +1,164 @@
-SD 1.xおよび2.xのモデル、当リポジトリで学習したLoRA、ControlNet（v1.0のみ動作確認）などに対応した、Diffusersベースの推論（画像生成）スクリプトです。コマンドラインから用います。
+本脚本是基于Diffusers的推理（图像生成）脚本，支持SD 1.x和2.x模型、本仓库训练的LoRA、ControlNet（仅确认v1.0可用）等。通过命令行使用。
 
 # 概要
 
-* Diffusers (v0.10.2) ベースの推論（画像生成）スクリプト。
-* SD 1.xおよび2.x (base/v-parameterization)モデルに対応。
-* txt2img、img2img、inpaintingに対応。
-* 対話モード、およびファイルからのプロンプト読み込み、連続生成に対応。
-* プロンプト1行あたりの生成枚数を指定可能。
-* 全体の繰り返し回数を指定可能。
-* `fp16`だけでなく`bf16`にも対応。
-* xformersに対応し高速生成が可能。
-    * xformersにより省メモリ生成を行いますが、Automatic 1111氏のWeb UIほど最適化していないため、512*512の画像生成でおおむね6GB程度のVRAMを使用します。
-* プロンプトの225トークンへの拡張。ネガティブプロンプト、重みづけに対応。
-* Diffusersの各種samplerに対応（Web UIよりもsampler数は少ないです）。
-* Text Encoderのclip skip（最後からn番目の層の出力を用いる）に対応。
-* VAEの別途読み込み。
-* CLIP Guided Stable Diffusion、VGG16 Guided Stable Diffusion、Highres. fix、upscale対応。
-    * Highres. fixはWeb UIの実装を全く確認していない独自実装のため、出力結果は異なるかもしれません。
-* LoRA対応。適用率指定、複数LoRA同時利用、重みのマージに対応。
-    * Text EncoderとU-Netで別の適用率を指定することはできません。
-* Attention Coupleに対応。
-* ControlNet v1.0に対応。
-* 途中でモデルを切り替えることはできませんが、バッチファイルを組むことで対応できます。
-* 個人的に欲しくなった機能をいろいろ追加。
+* 基于Diffusers (v0.10.2) 的推理（图像生成）脚本。
+* 支持SD 1.x和2.x (base/v-parameterization)模型。
+* 支持txt2img、img2img、inpainting。
+* 支持交互模式、从文件读取prompt、连续生成。
+* 可指定每行prompt生成的图片数量。
+* 可指定整体的重复次数。
+* 支持`fp16`和`bf16`。
+* 支持xformers，可实现高速生成。
+    * 通过xformers可节省显存，但没有Automatic 1111的Web UI优化得好，生成512*512图片大约需要6GB显存。
+* 支持将prompt扩展到225 token。支持negative prompt和权重。
+* 支持Diffusers的多种sampler（比Web UI少一些）。
+* 支持Text Encoder的clip skip（使用倒数第n层的输出）。
+* 支持单独加载VAE。
+* 支持CLIP Guided Stable Diffusion、VGG16 Guided Stable Diffusion、Highres. fix、upscale。
+    * Highres. fix为独立实现，未参考Web UI，输出结果可能不同。
+* 支持LoRA。可指定应用率、同时使用多个LoRA、权重合并。
+    * 不能分别为Text Encoder和U-Net指定不同应用率。
+* 支持Attention Couple。
+* 支持ControlNet v1.0。
+* 不能在中途切换模型，但可通过批处理脚本实现。
+* 添加了许多个人需要的功能。
 
-機能追加時にすべてのテストを行っているわけではないため、以前の機能に影響が出て一部機能が動かない可能性があります。何か問題があればお知らせください。
+由于功能增加时未做全部测试，可能会影响旧功能。如有问题请反馈。
 
-# 基本的な使い方
+# 基本用法
 
-## 対話モードでの画像生成
+## 交互模式生成图片
 
-以下のように入力してください。
+请按如下方式输入：
 
 ```batchfile
-python gen_img_diffusers.py --ckpt <モデル名> --outdir <画像出力先> --xformers --fp16 --interactive
+python gen_img_diffusers.py --ckpt <模型名> --outdir <图片输出目录> --xformers --fp16 --interactive
 ```
 
-`--ckpt`オプションにモデル（Stable Diffusionのcheckpointファイル、またはDiffusersのモデルフォルダ）、`--outdir`オプションに画像の出力先フォルダを指定します。
+`--ckpt`指定模型（Stable Diffusion的checkpoint文件、Diffusers模型文件夹或Hugging Face模型ID），`--outdir`指定图片输出目录。
 
-`--xformers`オプションでxformersの使用を指定します（xformersを使わない場合は外してください）。`--fp16`オプションでfp16（単精度）での推論を行います。RTX 30系のGPUでは `--bf16`オプションでbf16（bfloat16）での推論を行うこともできます。
+`--xformers`指定使用xformers（不使用可去掉）。`--fp16`指定使用fp16推理。RTX 30系GPU可用`--bf16`指定bf16推理。
 
-`--interactive`オプションで対話モードを指定しています。
+`--interactive`指定交互模式。
 
-Stable Diffusion 2.0（またはそこからの追加学習モデル）を使う場合は`--v2`オプションを追加してください。v-parameterizationを使うモデル（`768-v-ema.ckpt`およびそこからの追加学習モデル）を使う場合はさらに`--v_parameterization`を追加してください。
+使用Stable Diffusion 2.0（或其衍生模型）时需加`--v2`。使用v-parameterization模型（如`768-v-ema.ckpt`及其衍生模型）时还需加`--v_parameterization`。
 
-`--v2`の指定有無が間違っているとモデル読み込み時にエラーになります。`--v_parameterization`の指定有無が間違っていると茶色い画像が表示されます。
+`--v2`指定错误会导致加载模型时报错。`--v_parameterization`指定错误会生成棕色图片。
 
-`Type prompt:`と表示されたらプロンプトを入力してください。
+出现`Type prompt:`时输入prompt。
 
 ![image](https://user-images.githubusercontent.com/52813779/235343115-f3b8ac82-456d-4aab-9724-0cc73c4534aa.png)
 
-※画像が表示されずエラーになる場合、headless（画面表示機能なし）のOpenCVがインストールされているかもしれません。`pip install opencv-python`として通常のOpenCVを入れてください。または`--no_preview`オプションで画像表示を止めてください。
+※若图片无法显示且报错，可能安装了无界面的OpenCV，请用`pip install opencv-python`安装普通OpenCV，或加`--no_preview`关闭图片显示。
 
-画像ウィンドウを選択してから何らかのキーを押すとウィンドウが閉じ、次のプロンプトが入力できます。プロンプトでCtrl+Z、エンターの順に打鍵するとスクリプトを閉じます。
+选中图片窗口后按任意键关闭窗口，可继续输入prompt。输入prompt时按Ctrl+Z再回车可退出脚本。
 
-## 単一のプロンプトで画像を一括生成
+## 单个prompt批量生成图片
 
-以下のように入力します（実際には1行で入力します）。
-
-```batchfile
-python gen_img_diffusers.py --ckpt <モデル名> --outdir <画像出力先> 
-    --xformers --fp16 --images_per_prompt <生成枚数> --prompt "<プロンプト>"
-```
-
-`--images_per_prompt`オプションで、プロンプト1件当たりの生成枚数を指定します。`--prompt`オプションでプロンプトを指定します。スペースを含む場合はダブルクォーテーションで囲んでください。
-
-`--batch_size`オプションでバッチサイズを指定できます（後述）。
-
-## ファイルからプロンプトを読み込み一括生成
-
-以下のように入力します。
+如下输入（实际为一行）：
 
 ```batchfile
-python gen_img_diffusers.py --ckpt <モデル名> --outdir <画像出力先> 
-    --xformers --fp16 --from_file <プロンプトファイル名>
+python gen_img_diffusers.py --ckpt <模型名> --outdir <图片输出目录> 
+    --xformers --fp16 --images_per_prompt <生成数量> --prompt "<prompt>"
 ```
 
-`--from_file`オプションで、プロンプトが記述されたファイルを指定します。1行1プロンプトで記述してください。`--images_per_prompt`オプションを指定して1行あたり生成枚数を指定できます。
+`--images_per_prompt`指定每个prompt生成的图片数。`--prompt`指定prompt，含空格时需用双引号。
 
-## ネガティブプロンプト、重みづけの使用
+可用`--batch_size`指定batch size（见后文）。
 
-プロンプトオプション（プロンプト内で`--x`のように指定、後述）で`--n`を書くと、以降がネガティブプロンプトとなります。
+## 从文件读取prompt批量生成
 
-またAUTOMATIC1111氏のWeb UIと同様の `()` や` []` 、`(xxx:1.3)` などによる重みづけが可能です（実装はDiffusersの[Long Prompt Weighting Stable Diffusion](https://github.com/huggingface/diffusers/blob/main/examples/community/README.md#long-prompt-weighting-stable-diffusion)からコピーしたものです）。
+如下输入：
 
-コマンドラインからのプロンプト指定、ファイルからのプロンプト読み込みでも同様に指定できます。
+```batchfile
+python gen_img_diffusers.py --ckpt <模型名> --outdir <图片输出目录> 
+    --xformers --fp16 --from_file <prompt文件名>
+```
+
+`--from_file`指定包含prompt的文件，每行一个prompt。可用`--images_per_prompt`指定每行生成数量。
+
+## 使用negative prompt和权重
+
+在prompt中用`--x`（如`--n`）指定后，后面为negative prompt。
+
+支持与AUTOMATIC1111 Web UI相同的 `()`、`[]`、`(xxx:1.3)` 等权重写法（实现参考Diffusers的[Long Prompt Weighting Stable Diffusion](https://github.com/huggingface/diffusers/blob/main/examples/community/README.md#long-prompt-weighting-stable-diffusion)）。
+
+无论命令行、文件读取都可用。
 
 ![image](https://user-images.githubusercontent.com/52813779/235343128-e79cd768-ec59-46f5-8395-fce9bdc46208.png)
 
-# 主なオプション
+# 主要参数
 
-コマンドラインから指定してください。
+请在命令行指定。
 
-## モデルの指定
+## 模型指定
 
-- `--ckpt <モデル名>`：モデル名を指定します。`--ckpt`オプションは必須です。Stable Diffusionのcheckpointファイル、またはDiffusersのモデルフォルダ、Hugging FaceのモデルIDを指定できます。
+- `--ckpt <模型名>`：指定模型名。必填。可为Stable Diffusion checkpoint、Diffusers模型文件夹或Hugging Face模型ID。
 
-- `--v2`：Stable Diffusion 2.x系のモデルを使う場合に指定します。1.x系の場合には指定不要です。
+- `--v2`：使用Stable Diffusion 2.x模型时指定。1.x时不需指定。
 
-- `--v_parameterization`：v-parameterizationを使うモデルを使う場合に指定します（`768-v-ema.ckpt`およびそこからの追加学習モデル、Waifu Diffusion v1.5など）。
+- `--v_parameterization`：使用v-parameterization模型时指定（如`768-v-ema.ckpt`、Waifu Diffusion v1.5等）。
     
-    `--v2`の指定有無が間違っているとモデル読み込み時にエラーになります。`--v_parameterization`の指定有無が間違っていると茶色い画像が表示されます。
+    `--v2`指定错误会报错，`--v_parameterization`指定错误会生成棕色图片。
 
-- `--vae`：使用するVAEを指定します。未指定時はモデル内のVAEを使用します。
+- `--vae`：指定VAE。未指定时用模型自带VAE。
 
-## 画像生成と出力
+## 图片生成与输出
 
-- `--interactive`：インタラクティブモードで動作します。プロンプトを入力すると画像が生成されます。
+- `--interactive`：交互模式。输入prompt即生成图片。
 
-- `--prompt <プロンプト>`：プロンプトを指定します。スペースを含む場合はダブルクォーテーションで囲んでください。
+- `--prompt <prompt>`：指定prompt，含空格需用双引号。
 
-- `--from_file <プロンプトファイル名>`：プロンプトが記述されたファイルを指定します。1行1プロンプトで記述してください。なお画像サイズやguidance scaleはプロンプトオプション（後述）で指定できます。
+- `--from_file <prompt文件名>`：指定包含prompt的文件，每行一个prompt。图片尺寸、guidance scale等可用prompt参数指定。
 
-- `--W <画像幅>`：画像の幅を指定します。デフォルトは`512`です。
+- `--W <宽度>`：图片宽度，默认`512`。
 
-- `--H <画像高さ>`：画像の高さを指定します。デフォルトは`512`です。
+- `--H <高度>`：图片高度，默认`512`。
 
-- `--steps <ステップ数>`：サンプリングステップ数を指定します。デフォルトは`50`です。
+- `--steps <步数>`：采样步数，默认`50`。
 
-- `--scale <ガイダンススケール>`：unconditionalガイダンススケールを指定します。デフォルトは`7.5`です。
+- `--scale <guidance scale>`：unconditional guidance scale，默认`7.5`。
 
-- `--sampler <サンプラー名>`：サンプラーを指定します。デフォルトは`ddim`です。Diffusersで提供されているddim、pndm、dpmsolver、dpmsolver+++、lms、euler、euler_a、が指定可能です（後ろの三つはk_lms、k_euler、k_euler_aでも指定できます）。
+- `--sampler <采样器名>`：指定采样器，默认`ddim`。支持ddim、pndm、dpmsolver、dpmsolver+++、lms、euler、euler_a（后3个也可用k_lms、k_euler、k_euler_a）。
 
-- `--outdir <画像出力先フォルダ>`：画像の出力先を指定します。
+- `--outdir <输出目录>`：指定图片输出目录。
 
-- `--images_per_prompt <生成枚数>`：プロンプト1件当たりの生成枚数を指定します。デフォルトは`1`です。
+- `--images_per_prompt <生成数量>`：每个prompt生成图片数，默认`1`。
 
-- `--clip_skip <スキップ数>`：CLIPの後ろから何番目の層を使うかを指定します。省略時は最後の層を使います。
+- `--clip_skip <跳过层数>`：指定CLIP倒数第几层输出。默认用最后一层。
 
-- `--max_embeddings_multiples <倍数>`：CLIPの入出力長をデフォルト（75）の何倍にするかを指定します。未指定時は75のままです。たとえば3を指定すると入出力長が225になります。
+- `--max_embeddings_multiples <倍数>`：CLIP输入输出长度为默认75的几倍。未指定为75，如指定3则为225。
 
-- `--negative_scale` : uncoditioningのguidance scaleを個別に指定します。[gcem156氏のこちらの記事](https://note.com/gcem156/n/ne9a53e4a6f43)を参考に実装したものです。
+- `--negative_scale` : 单独指定uncoditioning guidance scale。实现参考[gcem156的文章](https://note.com/gcem156/n/ne9a53e4a6f43)。
 
-## メモリ使用量や生成速度の調整
+## 显存与速度调节
 
-- `--batch_size <バッチサイズ>`：バッチサイズを指定します。デフォルトは`1`です。バッチサイズが大きいとメモリを多く消費しますが、生成速度が速くなります。
+- `--batch_size <batch size>`：指定batch size，默认`1`。batch size大则显存占用高但生成快。
 
-- `--vae_batch_size <VAEのバッチサイズ>`：VAEのバッチサイズを指定します。デフォルトはバッチサイズと同じです。
-    VAEのほうがメモリを多く消費するため、デノイジング後（stepが100%になった後）でメモリ不足になる場合があります。このような場合にはVAEのバッチサイズを小さくしてください。
+- `--vae_batch_size <VAE batch size>`：指定VAE batch size，默认与batch size相同。VAE更占显存，若denoising后显存不足可减小此值。
 
-- `--xformers`：xformersを使う場合に指定します。
+- `--xformers`：指定使用xformers。
 
-- `--fp16`：fp16（単精度）での推論を行います。`fp16`と`bf16`をどちらも指定しない場合はfp32（単精度）での推論を行います。
+- `--fp16`：使用fp16推理。不指定fp16/bf16时为fp32。
 
-- `--bf16`：bf16（bfloat16）での推論を行います。RTX 30系のGPUでのみ指定可能です。`--bf16`オプションはRTX 30系以外のGPUではエラーになります。`fp16`よりも`bf16`のほうが推論結果がNaNになる（真っ黒の画像になる）可能性が低いようです。
+- `--bf16`：使用bf16推理，仅RTX 30系可用。其他GPU指定会报错。bf16比fp16更不易出现NaN（全黑图片）。
 
-## 追加ネットワーク（LoRA等）の使用
+## 额外网络（如LoRA）
 
-- `--network_module`：使用する追加ネットワークを指定します。LoRAの場合は`--network_module networks.lora`と指定します。複数のLoRAを使用する場合は`--network_module networks.lora networks.lora networks.lora`のように指定します。
+- `--network_module`：指定额外网络。LoRA时为`--network_module networks.lora`。多个LoRA时可多次指定。
 
-- `--network_weights`：使用する追加ネットワークの重みファイルを指定します。`--network_weights model.safetensors`のように指定します。複数のLoRAを使用する場合は`--network_weights model1.safetensors model2.safetensors model3.safetensors`のように指定します。引数の数は`--network_module`で指定した数と同じにしてください。
+- `--network_weights`：指定额外网络权重文件。多个LoRA时用空格分隔，数量与`--network_module`一致。
 
-- `--network_mul`：使用する追加ネットワークの重みを何倍にするかを指定します。デフォルトは`1`です。`--network_mul 0.8`のように指定します。複数のLoRAを使用する場合は`--network_mul 0.4 0.5 0.7`のように指定します。引数の数は`--network_module`で指定した数と同じにしてください。
+- `--network_mul`：指定额外网络权重倍率，默认`1`。多个LoRA时用空格分隔，数量与`--network_module`一致。
 
-- `--network_merge`：使用する追加ネットワークの重みを`--network_mul`に指定した重みであらかじめマージします。`--network_pre_calc` と同時に使用できません。プロンプトオプションの`--am`、およびRegional LoRAは使用できなくなりますが、LoRA未使用時と同じ程度まで生成が高速化されます。
+- `--network_merge`：用`--network_mul`指定的权重提前合并额外网络。不能与`--network_pre_calc`同时用。不能用prompt参数`--am`和Regional LoRA，但生成速度与未用LoRA时相当。
 
-- `--network_pre_calc`：使用する追加ネットワークの重みを生成ごとにあらかじめ計算します。プロンプトオプションの`--am`が使用できます。LoRA未使用時と同じ程度まで生成は高速化されますが、生成前に重みを計算する時間が必要で、またメモリ使用量も若干増加します。Regional LoRA使用時は無効になります 。
+- `--network_pre_calc`：每次生成前提前计算额外网络权重。可用prompt参数`--am`。生成速度与未用LoRA时相当，但计算权重需时间且显存略增。用Regional LoRA时无效。
 
-# 主なオプションの指定例
+# 主要参数示例
 
-次は同一プロンプトで64枚をバッチサイズ4で一括生成する例です。
+同一prompt批量生成64张，batch size为4：
 
 ```batchfile
 python gen_img_diffusers.py --ckpt model.ckpt --outdir outputs 
@@ -168,7 +167,7 @@ python gen_img_diffusers.py --ckpt model.ckpt --outdir outputs
     --prompt "beautiful flowers --n monochrome"
 ```
 
-次はファイルに書かれたプロンプトを、それぞれ10枚ずつ、バッチサイズ4で一括生成する例です。
+文件中每个prompt各生成10张，batch size为4：
 
 ```batchfile
 python gen_img_diffusers.py --ckpt model.ckpt --outdir outputs 
@@ -177,7 +176,7 @@ python gen_img_diffusers.py --ckpt model.ckpt --outdir outputs
     --from_file prompts.txt
 ```
 
-Textual Inversion（後述）およびLoRAの使用例です。
+Textual Inversion和LoRA使用示例：
 
 ```batchfile
 python gen_img_diffusers.py --ckpt model.safetensors 
@@ -191,32 +190,32 @@ python gen_img_diffusers.py --ckpt model.safetensors
     --batch_size 8 --images_per_prompt 1 --interactive
 ```
 
-# プロンプトオプション
+# prompt参数
 
-プロンプト内で、`--n`のように「ハイフンふたつ+アルファベットn文字」でプロンプトから各種オプションの指定が可能です。対話モード、コマンドライン、ファイル、いずれからプロンプトを指定する場合でも有効です。
+在prompt中可用`--n`等形式指定参数。交互、命令行、文件读取均可用。
 
-プロンプトのオプション指定`--n`の前後にはスペースを入れてください。
+`--n`前后需有空格。
 
-- `--n`：ネガティブプロンプトを指定します。
+- `--n`：指定negative prompt。
 
-- `--w`：画像幅を指定します。コマンドラインからの指定を上書きします。
+- `--w`：指定图片宽度，覆盖命令行参数。
 
-- `--h`：画像高さを指定します。コマンドラインからの指定を上書きします。
+- `--h`：指定图片高度，覆盖命令行参数。
 
-- `--s`：ステップ数を指定します。コマンドラインからの指定を上書きします。
+- `--s`：指定步数，覆盖命令行参数。
 
-- `--d`：この画像の乱数seedを指定します。`--images_per_prompt`を指定している場合は「--d 1,2,3,4」のようにカンマ区切りで複数指定してください。
-    ※様々な理由により、Web UIとは同じ乱数seedでも生成される画像が異なる場合があります。
+- `--d`：指定seed。`--images_per_prompt`时可用逗号分隔多个seed。
+    ※因多种原因，与Web UI同seed生成图片可能不同。
 
-- `--l`：guidance scaleを指定します。コマンドラインからの指定を上書きします。
+- `--l`：指定guidance scale，覆盖命令行参数。
 
-- `--t`：img2img（後述）のstrengthを指定します。コマンドラインからの指定を上書きします。
+- `--t`：img2img的strength，覆盖命令行参数。
 
-- `--nl`：ネガティブプロンプトのguidance scaleを指定します（後述）。コマンドラインからの指定を上書きします。
+- `--nl`：指定negative prompt的guidance scale，覆盖命令行参数。
 
-- `--am`：追加ネットワークの重みを指定します。コマンドラインからの指定を上書きします。複数の追加ネットワークを使用する場合は`--am 0.8,0.5,0.3`のように __カンマ区切りで__ 指定します。
+- `--am`：指定额外网络权重，覆盖命令行参数。多个网络时用逗号分隔。
 
-※これらのオプションを指定すると、バッチサイズよりも小さいサイズでバッチが実行される場合があります（これらの値が異なると一括生成できないため）。（あまり気にしなくて大丈夫ですが、ファイルからプロンプトを読み込み生成する場合は、これらの値が同一のプロンプトを並べておくと効率が良くなります。）
+※指定这些参数时，batch size可能小于设定值（参数不同无法批量生成）。从文件读取prompt时，参数相同效率更高。
 
 例：
 ```
@@ -227,17 +226,17 @@ python gen_img_diffusers.py --ckpt model.safetensors
 
 # img2img
 
-## オプション
+## 参数
 
-- `--image_path`：img2imgに利用する画像を指定します。`--image_path template.png`のように指定します。フォルダを指定すると、そのフォルダの画像を順次利用します。
+- `--image_path`：指定img2img用图片。可为文件夹，顺序读取图片。
 
-- `--strength`：img2imgのstrengthを指定します。`--strength 0.8`のように指定します。デフォルトは`0.8`です。
+- `--strength`：指定img2img的strength，默认`0.8`。
 
-- `--sequential_file_name`：ファイル名を連番にするかどうかを指定します。指定すると生成されるファイル名が`im_000001.png`からの連番になります。
+- `--sequential_file_name`：生成文件名为序号，如`im_000001.png`。
 
-- `--use_original_file_name`：指定すると生成ファイル名がオリジナルのファイル名と同じになります。
+- `--use_original_file_name`：生成文件名与原文件相同。
 
-## コマンドラインからの実行例
+## 命令行示例
 
 ```batchfile
 python gen_img_diffusers.py --ckpt trinart_characters_it4_v1_vae_merged.ckpt 
@@ -251,64 +250,63 @@ python gen_img_diffusers.py --ckpt trinart_characters_it4_v1_vae_merged.ckpt
     --batch_size 8 --images_per_prompt 32
 ```
 
-`--image_path`オプションにフォルダを指定すると、そのフォルダの画像を順次読み込みます。生成される枚数は画像枚数ではなく、プロンプト数になりますので、`--images_per_promptPPオプションを指定してimg2imgする画像の枚数とプロンプト数を合わせてください。
+`--image_path`为文件夹时，顺序读取图片。生成数量为prompt数，需用`--images_per_prompt`使图片数与prompt数一致。
 
-ファイルはファイル名でソートして読み込みます。なおソート順は文字列順となりますので（`1.jpg→2.jpg→10.jpg`ではなく`1.jpg→10.jpg→2.jpg`の順）、頭を0埋めするなどしてご対応ください（`01.jpg→02.jpg→10.jpg`）。
+文件按文件名字符串排序（如`1.jpg→10.jpg→2.jpg`），建议用0补齐（如`01.jpg→02.jpg→10.jpg`）。
 
-## img2imgを利用したupscale
+## img2img放大
 
-img2img時にコマンドラインオプションの`--W`と`--H`で生成画像サイズを指定すると、元画像をそのサイズにリサイズしてからimg2imgを行います。
+img2img时用`--W`和`--H`指定生成图片尺寸，会先将原图resize到该尺寸再img2img。
 
-またimg2imgの元画像がこのスクリプトで生成した画像の場合、プロンプトを省略すると、元画像のメタデータからプロンプトを取得しそのまま用います。これによりHighres. fixの2nd stageの動作だけを行うことができます。
+若原图为本脚本生成，省略prompt时会自动读取元数据中的prompt，实现Highres. fix的2nd stage。
 
-## img2img時のinpainting
+## img2img inpainting
 
-画像およびマスク画像を指定してinpaintingできます（inpaintingモデルには対応しておらず、単にマスク領域を対象にimg2imgするだけです）。
+可指定图片和mask图片进行inpainting（不支持inpainting模型，仅对mask区域img2img）。
 
-オプションは以下の通りです。
+参数如下：
 
-- `--mask_image`：マスク画像を指定します。`--img_path`と同様にフォルダを指定すると、そのフォルダの画像を順次利用します。
+- `--mask_image`：指定mask图片。可为文件夹，顺序读取。
 
-マスク画像はグレースケール画像で、白の部分がinpaintingされます。境界をグラデーションしておくとなんとなく滑らかになりますのでお勧めです。
+mask为灰度图，白色区域为inpainting区域。建议边界做渐变更自然。
 
 ![image](https://user-images.githubusercontent.com/52813779/235343795-9eaa6d98-02ff-4f32-b089-80d1fc482453.png)
 
-# その他の機能
+# 其他功能
 
 ## Textual Inversion
 
-`--textual_inversion_embeddings`オプションで使用するembeddingsを指定します（複数指定可）。拡張子を除いたファイル名をプロンプト内で使用することで、そのembeddingsを利用します（Web UIと同様の使用法です）。ネガティブプロンプト内でも使用できます。
+用`--textual_inversion_embeddings`指定embeddings（可多个）。在prompt中用去除扩展名的文件名即可调用（与Web UI一致）。negative prompt也可用。
 
-モデルとして、当リポジトリで学習したTextual Inversionモデル、およびWeb UIで学習したTextual Inversionモデル（画像埋め込みは非対応）を利用できます
+支持本仓库训练的Textual Inversion模型和Web UI训练的模型（不支持图片embedding）。
 
 ## Extended Textual Inversion
 
-`--textual_inversion_embeddings`の代わりに`--XTI_embeddings`オプションを指定してください。使用法は`--textual_inversion_embeddings`と同じです。
+用`--XTI_embeddings`代替`--textual_inversion_embeddings`。用法相同。
 
 ## Highres. fix
 
-AUTOMATIC1111氏のWeb UIにある機能の類似機能です（独自実装のためもしかしたらいろいろ異なるかもしれません）。最初に小さめの画像を生成し、その画像を元にimg2imgすることで、画像全体の破綻を防ぎつつ大きな解像度の画像を生成します。
+类似AUTOMATIC1111 Web UI的功能（独立实现，可能有差异）。先生成小图，再img2img生成大图，防止大分辨率下整体崩坏。
 
-2nd stageのstep数は`--steps` と`--strength`オプションの値から計算されます（`steps*strength`）。
+2nd stage步数为`steps*strength`。
 
-img2imgと併用できません。
+不能与img2img同时用。
 
-以下のオプションがあります。
+参数如下：
 
-- `--highres_fix_scale`：Highres. fixを有効にして、1st stageで生成する画像のサイズを、倍率で指定します。最終出力が1024x1024で、最初に512x512の画像を生成する場合は`--highres_fix_scale 0.5`のように指定します。Web UI出の指定の逆数になっていますのでご注意ください。
+- `--highres_fix_scale`：启用Highres. fix，指定1st stage图片尺寸倍率。如最终1024x1024，1st stage为512x512，则`--highres_fix_scale 0.5`。与Web UI相反。
 
-- `--highres_fix_steps`：1st stageの画像のステップ数を指定します。デフォルトは`28`です。
+- `--highres_fix_steps`：1st stage步数，默认`28`。
 
-- `--highres_fix_save_1st`：1st stageの画像を保存するかどうかを指定します。
+- `--highres_fix_save_1st`：是否保存1st stage图片。
 
-- `--highres_fix_latents_upscaling`：指定すると2nd stageの画像生成時に1st stageの画像をlatentベースでupscalingします（bilinearのみ対応）。未指定時は画像をLANCZOS4でupscalingします。
+- `--highres_fix_latents_upscaling`：2nd stage时用latent上采样（仅支持bilinear）。未指定时用LANCZOS4。
 
-- `--highres_fix_upscaler`：2nd stageに任意のupscalerを利用します。現在は`--highres_fix_upscaler tools.latent_upscaler` のみ対応しています。
+- `--highres_fix_upscaler`：2nd stage用自定义upscaler。目前仅支持`tools.latent_upscaler`。
 
-- `--highres_fix_upscaler_args`：`--highres_fix_upscaler`で指定したupscalerに渡す引数を指定します。
-    `tools.latent_upscaler`の場合は、`--highres_fix_upscaler_args "weights=D:\Work\SD\Models\others\etc\upscaler-v1-e100-220.safetensors"`のように重みファイルを指定します。 
+- `--highres_fix_upscaler_args`：传递给upscaler的参数。如`tools.latent_upscaler`时可指定权重文件。
 
-コマンドラインの例です。
+命令行示例：
 
 ```batchfile
 python gen_img_diffusers.py  --ckpt trinart_characters_it4_v1_vae_merged.ckpt
@@ -321,23 +319,21 @@ python gen_img_diffusers.py  --ckpt trinart_characters_it4_v1_vae_merged.ckpt
 
 ## ControlNet
 
-現在はControlNet 1.0のみ動作確認しています。プリプロセスはCannyのみサポートしています。
+目前仅确认ControlNet 1.0可用。预处理仅支持Canny。
 
-以下のオプションがあります。
+参数如下：
 
-- `--control_net_models`：ControlNetのモデルファイルを指定します。
-    複数指定すると、それらをstepごとに切り替えて利用します（Web UIのControlNet拡張の実装と異なります）。diffと通常の両方をサポートします。
+- `--control_net_models`：指定ControlNet模型文件。可多个，按step切换（与Web UI实现不同）。支持diff和普通模型。
 
-- `--guide_image_path`：ControlNetに使うヒント画像を指定します。`--img_path`と同様にフォルダを指定すると、そのフォルダの画像を順次利用します。Canny以外のモデルの場合には、あらかじめプリプロセスを行っておいてください。
+- `--guide_image_path`：指定ControlNet用引导图片。可为文件夹，顺序读取。非Canny模型需提前预处理。
 
-- `--control_net_preps`：ControlNetのプリプロセスを指定します。`--control_net_models`と同様に複数指定可能です。現在はcannyのみ対応しています。対象モデルでプリプロセスを使用しない場合は `none` を指定します。
-   cannyの場合 `--control_net_preps canny_63_191`のように、閾値1と2を'_'で区切って指定できます。
+- `--control_net_preps`：指定ControlNet预处理。可多个。目前仅支持canny。不用预处理时指定`none`。如canny可用`--control_net_preps canny_63_191`指定两个阈值。
 
-- `--control_net_weights`：ControlNetの適用時の重みを指定します（`1.0`で通常、`0.5`なら半分の影響力で適用）。`--control_net_models`と同様に複数指定可能です。
+- `--control_net_weights`：指定ControlNet权重。可多个。
 
-- `--control_net_ratios`：ControlNetを適用するstepの範囲を指定します。`0.5`の場合は、step数の半分までControlNetを適用します。`--control_net_models`と同様に複数指定可能です。
+- `--control_net_ratios`：指定ControlNet应用step范围。如`0.5`为前半步应用。可多个。
 
-コマンドラインの例です。
+命令行示例：
 
 ```batchfile
 python gen_img_diffusers.py --ckpt model_ckpt --scale 8 --steps 48 --outdir txt2img --xformers 
@@ -348,41 +344,41 @@ python gen_img_diffusers.py --ckpt model_ckpt --scale 8 --steps 48 --outdir txt2
 
 ## Attention Couple + Reginal LoRA
 
-プロンプトをいくつかの部分に分割し、それぞれのプロンプトを画像内のどの領域に適用するかを指定できる機能です。個別のオプションはありませんが、`mask_path`とプロンプトで指定します。
+可将prompt分为多部分，分别指定应用于图片的区域。无单独参数，用`mask_path`和prompt指定。
 
-まず、プロンプトで` AND `を利用して、複数部分を定義します。最初の3つに対して領域指定ができ、以降の部分は画像全体へ適用されます。ネガティブプロンプトは画像全体に適用されます。
+先用` AND `分割prompt，最多前三部分可指定区域，后面部分应用于全图。negative prompt应用于全图。
 
-以下ではANDで3つの部分を定義しています。
+如：
 
 ```
 shs 2girls, looking at viewer, smile AND bsb 2girls, looking back AND 2girls --n bad quality, worst quality
 ```
 
-次にマスク画像を用意します。マスク画像はカラーの画像で、RGBの各チャネルがプロンプトのANDで区切られた部分に対応します。またあるチャネルの値がすべて0の場合、画像全体に適用されます。
+准备mask图片，彩色图像，RGB各通道对应prompt的各部分。某通道全为0时，应用于全图。
 
-上記の例では、Rチャネルが`shs 2girls, looking at viewer, smile`、Gチャネルが`bsb 2girls, looking back`に、Bチャネルが`2girls`に対応します。次のようなマスク画像を使用すると、Bチャネルに指定がありませんので、`2girls`は画像全体に適用されます。
+如R通道为`shs 2girls, looking at viewer, smile`，G通道为`bsb 2girls, looking back`，B通道为`2girls`。如B通道未指定，则`2girls`应用于全图。
 
 ![image](https://user-images.githubusercontent.com/52813779/235343061-b4dc9392-3dae-4831-8347-1e9ae5054251.png)
 
-マスク画像は`--mask_path`で指定します。現在は1枚のみ対応しています。指定した画像サイズに自動的にリサイズされ適用されます。
+mask图片用`--mask_path`指定。目前仅支持1张。会自动resize到指定尺寸。
 
-ControlNetと組み合わせることも可能です（細かい位置指定にはControlNetとの組み合わせを推奨します）。
+可与ControlNet结合（推荐细致位置指定时用ControlNet）。
 
-LoRAを指定すると、`--network_weights`で指定した複数のLoRAがそれぞれANDの各部分に対応します。現在の制約として、LoRAの数はANDの部分の数と同じである必要があります。
+指定LoRA时，`--network_weights`中多个LoRA分别对应AND分割的各部分。当前要求LoRA数量与AND部分数量一致。
 
 ## CLIP Guided Stable Diffusion
 
-DiffusersのCommunity Examplesの[こちらのcustom pipeline](https://github.com/huggingface/diffusers/blob/main/examples/community/README.md#clip-guided-stable-diffusion)からソースをコピー、変更したものです。
+基于Diffusers Community Examples的[custom pipeline](https://github.com/huggingface/diffusers/blob/main/examples/community/README.md#clip-guided-stable-diffusion)修改。
 
-通常のプロンプトによる生成指定に加えて、追加でより大規模のCLIPでプロンプトのテキストの特徴量を取得し、生成中の画像の特徴量がそのテキストの特徴量に近づくよう、生成される画像をコントロールします（私のざっくりとした理解です）。大きめのCLIPを使いますのでVRAM使用量はかなり増加し（VRAM 8GBでは512*512でも厳しいかもしれません）、生成時間も掛かります。
+在普通prompt生成基础上，额外用更大的CLIP获取prompt文本特征，使生成图片特征更接近文本特征。需用大CLIP，显存占用高（8GB显存512*512可能不够），生成慢。
 
-なお選択できるサンプラーはDDIM、PNDM、LMSのみとなります。
+仅支持DDIM、PNDM、LMS采样器。
 
-`--clip_guidance_scale`オプションにどの程度、CLIPの特徴量を反映するかを数値で指定します。先のサンプルでは100になっていますので、そのあたりから始めて増減すると良いようです。
+`--clip_guidance_scale`指定CLIP特征影响力。示例为100，可据此调整。
 
-デフォルトではプロンプトの先頭75トークン（重みづけの特殊文字を除く）がCLIPに渡されます。プロンプトの`--c`オプションで、通常のプロンプトではなく、CLIPに渡すテキストを別に指定できます（たとえばCLIPはDreamBoothのidentifier（識別子）や「1girl」などのモデル特有の単語は認識できないと思われますので、それらを省いたテキストが良いと思われます）。
+默认用prompt前75 token（去除权重符号）传给CLIP。用prompt参数`--c`可单独指定CLIP文本（如CLIP不识别DreamBooth identifier或"1girl"等模型特有词时，可省略）。
 
-コマンドラインの例です。
+命令行示例：
 
 ```batchfile
 python gen_img_diffusers.py  --ckpt v1-5-pruned-emaonly.ckpt --n_iter 1 
@@ -393,9 +389,9 @@ python gen_img_diffusers.py  --ckpt v1-5-pruned-emaonly.ckpt --n_iter 1
 
 ## CLIP Image Guided Stable Diffusion
 
-テキストではなくCLIPに別の画像を渡し、その特徴量に近づくよう生成をコントロールする機能です。`--clip_image_guidance_scale`オプションで適用量の数値を、`--guide_image_path`オプションでguideに使用する画像（ファイルまたはフォルダ）を指定してください。
+不是用文本，而是将其他图片传给CLIP，使生成图片特征更接近该图片。用`--clip_image_guidance_scale`指定影响力，`--guide_image_path`指定引导图片（文件或文件夹）。
 
-コマンドラインの例です。
+命令行示例：
 
 ```batchfile
 python gen_img_diffusers.py  --ckpt trinart_characters_it4_v1_vae_merged.ckpt
@@ -407,15 +403,15 @@ python gen_img_diffusers.py  --ckpt trinart_characters_it4_v1_vae_merged.ckpt
 
 ### VGG16 Guided Stable Diffusion
 
-指定した画像に近づくように画像生成する機能です。通常のプロンプトによる生成指定に加えて、追加でVGG16の特徴量を取得し、生成中の画像が指定したガイド画像に近づくよう、生成される画像をコントロールします。img2imgでの使用をお勧めします（通常の生成では画像がぼやけた感じになります）。CLIP Guided Stable Diffusionの仕組みを流用した独自の機能です。またアイデアはVGGを利用したスタイル変換から拝借しています。
+使生成图片更接近指定图片。除普通prompt外，额外用VGG16获取特征，使生成图片更接近引导图片。推荐img2img使用（普通生成会偏模糊）。基于CLIP Guided Stable Diffusion机制独立实现，灵感来自VGG风格迁移。
 
-なお選択できるサンプラーはDDIM、PNDM、LMSのみとなります。
+仅支持DDIM、PNDM、LMS采样器。
 
-`--vgg16_guidance_scale`オプションにどの程度、VGG16特徴量を反映するかを数値で指定します。試した感じでは100くらいから始めて増減すると良いようです。`--guide_image_path`オプションでguideに使用する画像（ファイルまたはフォルダ）を指定してください。
+`--vgg16_guidance_scale`指定VGG16特征影响力。建议从100开始调整。`--guide_image_path`指定引导图片（文件或文件夹）。
 
-複数枚の画像を一括でimg2img変換し、元画像をガイド画像とする場合、`--guide_image_path`と`--image_path`に同じ値を指定すればOKです。
+批量img2img且原图为引导图时，`--guide_image_path`和`--image_path`可相同。
 
-コマンドラインの例です。
+命令行示例：
 
 ```batchfile
 python gen_img_diffusers.py --ckpt wd-v1-3-full-pruned-half.ckpt 
@@ -430,56 +426,60 @@ python gen_img_diffusers.py --ckpt wd-v1-3-full-pruned-half.ckpt
     --vgg16_guidance_scale 100 --guide_image_path ..\src_image 
 ```
 
-`--vgg16_guidance_layerPで特徴量取得に使用するVGG16のレイヤー番号を指定できます（デフォルトは20でconv4-2のReLUです）。上の層ほど画風を表現し、下の層ほどコンテンツを表現するといわれています。
+用`--vgg16_guidance_layer`可指定VGG16用于特征提取的层（默认20，即conv4-2的ReLU）。越高层越偏风格，越低层越偏内容。
 
 ![image](https://user-images.githubusercontent.com/52813779/235343813-3c1f0d7a-4fb3-4274-98e4-b92d76b551df.png)
 
-# その他のオプション
+# 其他参数
 
-- `--no_preview` : 対話モードでプレビュー画像を表示しません。OpenCVがインストールされていない場合や、出力されたファイルを直接確認する場合に指定してください。
+- `--no_preview` : 交互模式下不显示预览图片。OpenCV未安装或只需查看输出文件时可用。
 
-- `--n_iter` : 生成を繰り返す回数を指定します。デフォルトは1です。プロンプトをファイルから読み込むとき、複数回の生成を行いたい場合に指定します。
+- `--n_iter` : 指定生成重复次数，默认1。文件读取prompt时需多次生成可用。
 
-- `--tokenizer_cache_dir` : トークナイザーのキャッシュディレクトリを指定します。（作業中）
+- `--tokenizer_cache_dir` : 指定tokenizer缓存目录。（开发中）
 
-- `--seed` : 乱数seedを指定します。1枚生成時はその画像のseed、複数枚生成時は各画像のseedを生成するための乱数のseedになります（`--from_file`で複数画像生成するとき、`--seed`オプションを指定すると複数回実行したときに各画像が同じseedになります）。
+- `--seed` : 指定随机seed。单张时为该图片seed，多张时为生成各图片seed的随机种子（如`--from_file`批量生成，指定`--seed`可多次运行生成相同图片）。
 
-- `--iter_same_seed` : プロンプトに乱数seedの指定がないとき、`--n_iter`の繰り返し内ではすべて同じseedを使います。`--from_file`で指定した複数のプロンプト間でseedを統一して比較するときに使います。
+- `--iter_same_seed` : prompt未指定seed时，`--n_iter`内每次用同一seed。用于对比不同prompt时统一seed。
 
-- `--diffusers_xformers` : Diffuserのxformersを使用します。
+- `--diffusers_xformers` : 使用Diffusers的xformers。
 
-- `--opt_channels_last` : 推論時にテンソルのチャンネルを最後に配置します。場合によっては高速化されることがあります。
+- `--opt_channels_last` : 推理时将tensor通道放最后，部分情况下可加速。
 
-- `--network_show_meta` : 追加ネットワークのメタデータを表示します。
+- `--network_show_meta` : 显示额外网络的meta信息。
 
 
 --- 
 
-# About Gradual Latent
+# 关于Gradual Latent
 
-Gradual Latent is a Hires fix that gradually increases the size of the latent.  `gen_img.py`, `sdxl_gen_img.py`, and `gen_img_diffusers.py` have the following options.
+Gradual Latent是一种Hires fix，会逐步增大latent的尺寸。`gen_img.py`、`sdxl_gen_img.py`、`gen_img_diffusers.py`支持如下参数：
 
-- `--gradual_latent_timesteps`: Specifies the timestep to start increasing the size of the latent. The default is None, which means Gradual Latent is not used. Please try around 750 at first.
-- `--gradual_latent_ratio`: Specifies the initial size of the latent. The default is 0.5, which means it starts with half the default latent size.
-- `--gradual_latent_ratio_step`: Specifies the ratio to increase the size of the latent. The default is 0.125, which means the latent size is gradually increased to 0.625, 0.75, 0.875, 1.0.
-- `--gradual_latent_ratio_every_n_steps`: Specifies the interval to increase the size of the latent. The default is 3, which means the latent size is increased every 3 steps.
+- `--gradual_latent_timesteps`：指定开始增大latent尺寸的timestep。默认None（不使用Gradual Latent）。建议先试750。
+- `--gradual_latent_ratio`：指定latent初始尺寸。默认0.5（为默认latent尺寸一半）。
+- `--gradual_latent_ratio_step`：指定每次增大latent的比例。默认0.125（即0.625, 0.75, 0.875, 1.0逐步增大）。
+- `--gradual_latent_ratio_every_n_steps`：指定每隔多少步增大一次latent尺寸。默认3（每3步增大一次）。
 
-Each option can also be specified with prompt options, `--glt`, `--glr`, `--gls`, `--gle`.
+也可用prompt参数`--glt`、`--glr`、`--gls`、`--gle`指定。
 
-__Please specify `euler_a` for the sampler.__ Because the source code of the sampler is modified. It will not work with other samplers.
+__采样器必须指定`euler_a`__，因采样器源码有修改，其他采样器无效。
 
-It is more effective with SD 1.5. It is quite subtle with SDXL.
+对SD 1.5效果更明显，SDXL效果较弱。
 
-# Gradual Latent について
+# Gradual Latent 说明
 
-latentのサイズを徐々に大きくしていくHires fixです。`gen_img.py` 、``sdxl_gen_img.py` 、`gen_img_diffusers.py` に以下のオプションが追加されています。
+Gradual Latent会逐步增大latent尺寸的Hires fix。`gen_img.py`、`sdxl_gen_img.py`、`gen_img_diffusers.py`支持如下参数：
 
-- `--gradual_latent_timesteps` : latentのサイズを大きくし始めるタイムステップを指定します。デフォルトは None で、Gradual Latentを使用しません。750 くらいから始めてみてください。
-- `--gradual_latent_ratio` : latentの初期サイズを指定します。デフォルトは 0.5 で、デフォルトの latent サイズの半分のサイズから始めます。
-- `--gradual_latent_ratio_step`: latentのサイズを大きくする割合を指定します。デフォルトは 0.125 で、latentのサイズを 0.625, 0.75, 0.875, 1.0 と徐々に大きくします。
-- `--gradual_latent_ratio_every_n_steps`: latentのサイズを大きくする間隔を指定します。デフォルトは 3 で、3ステップごとに latent のサイズを大きくします。
+- `--gradual_latent_timesteps` : 指定开始增大latent尺寸的timestep。默认None（不使用Gradual Latent）。建议先试750。
+- `--gradual_latent_ratio` : 指定latent初始尺寸。默认0.5（为默认latent尺寸一半）。
+- `--gradual_latent_ratio_step`: 指定每次增大latent的比例。默认0.125（即0.625, 0.75, 0.875, 1.0逐步增大）。
+- `--gradual_latent_ratio_every_n_steps`: 指定每隔多少步增大一次latent尺寸。默认3（每3步增大一次）。
 
-それぞれのオプションは、プロンプトオプション、`--glt`、`--glr`、`--gls`、`--gle` でも指定できます。
+也可用prompt参数`--glt`、`--glr`、`--gls`、`--gle`指定。
+
+因采样器源码有修改，__采样器必须指定`euler_a`__，其他采样器无效。
+
+对SD 1.5效果更明显，SDXL效果较弱。
 
 サンプラーに手を加えているため、__サンプラーに `euler_a` を指定してください。__ 他のサンプラーでは動作しません。
 

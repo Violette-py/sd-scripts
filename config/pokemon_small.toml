@@ -1,0 +1,11 @@
+[general]
+enable_bucket = true                        # Whether to use Aspect Ratio Bucketing
+
+[[datasets]]
+resolution = 512                            # Training resolution
+batch_size = 4                              # Batch size
+
+  [[datasets.subsets]]
+  image_dir = './data/pokemon_small'         # Specify the folder containing the training images
+  class_tokens = 'pokemon'
+  num_repeats = 20                          # Number of repetitions for training images

@@ -11,3 +11,6 @@ GEMINI.md
 .claude
 .gemini
 MagicMock
+
+data/
+results/
